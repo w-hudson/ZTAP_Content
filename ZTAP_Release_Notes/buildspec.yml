@@ -1,0 +1,32 @@
+version: 0.2
+
+env:
+  secrets-manager:
+    AWS_DEVELOP_ACCESS_KEY_ID: codebuild_prod:AWS_DEVELOP_ACCESS_KEY_ID
+    AWS_DEVELOP_SECRET_ACCESS_KEY: codebuild_prod:AWS_DEVELOP_SECRET_ACCESS_KEY
+    AWS_PROD_ACCESS_KEY_ID: codebuild_prod:AWS_PROD_ACCESS_KEY_ID
+    AWS_PROD_SECRET_ACCESS_KEY: codebuild_prod:AWS_PROD_SECRET_ACCESS_KEY
+
+phases:
+  pre_build:
+    commands:
+      - $(aws ecr get-login --region $AWS_DEFAULT_REGION --no-include-email)
+      - pip install ecs-deploy
+
+  build:
+    commands:
+      - echo "deploy comes next..."
+  post_build:
+    commands:
+      - |
+        CODEBUILD_GIT_BRANCH="$(git symbolic-ref HEAD --short 2>/dev/null)"
+        if [ "$CODEBUILD_GIT_BRANCH" = "" ]; then
+          CODEBUILD_GIT_BRANCH="$(git branch -a --contains HEAD | sed -n 2p | awk '{ printf $1 }')"
+          CODEBUILD_GIT_BRANCH=${CODEBUILD_GIT_BRANCH#remotes/origin/}
+        fi
+      - |
+        if [ "$CODEBUILD_GIT_BRANCH" = "master" ]; then
+          ecs run ATAServices doc_sync --access-key-id ${AWS_PROD_ACCESS_KEY_ID} --secret-access-key ${AWS_PROD_SECRET_ACCESS_KEY}
+        else
+          ecs run ATAPDevelopATAServices doc_sync -e doc_sync GITHUB_BRANCH ${CODEBUILD_GIT_BRANCH} --access-key-id ${AWS_DEVELOP_ACCESS_KEY_ID} --secret-access-key ${AWS_DEVELOP_SECRET_ACCESS_KEY}
+        fi
